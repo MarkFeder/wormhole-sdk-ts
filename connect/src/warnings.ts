@@ -8,4 +8,9 @@ export type GovernorLimitWarning = {
   reason: "ExceedsRemainingNotional" | "ExceedsLargeTransferLimit";
 };
 
-export type QuoteWarning = DestinationCapacityWarning | GovernorLimitWarning;
+export type BurnLimitWarning = {
+  type: "BurnLimitWarning";
+  burnLimit: bigint;
+};
+
+export type QuoteWarning = DestinationCapacityWarning | GovernorLimitWarning | BurnLimitWarning;

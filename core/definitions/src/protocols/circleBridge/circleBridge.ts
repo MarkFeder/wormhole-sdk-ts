@@ -160,6 +160,14 @@ export interface CircleBridge<N extends Network = Network, C extends Chain = Cha
    * @returns The parsed CircleTransferMessage
    */
   parseTransactionDetails(txid: string): Promise<CircleTransferMessage>;
+  /**
+   * Get the per-message burn limit for a token on this chain,
+   * if the implementation supports it
+   *
+   * @param token The token to get the burn limit for
+   * @returns The burn limit in base units, or null if not applicable
+   */
+  getBurnLimit?(token: ChainAddress): Promise<bigint | null>;
 }
 
 /**

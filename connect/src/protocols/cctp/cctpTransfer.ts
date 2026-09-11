@@ -15,6 +15,7 @@ import type {
   UnsignedTransaction,
   WormholeMessageId,
 } from "@wormhole-foundation/sdk-definitions";
+import type { QuoteWarning } from "../../warnings.js";
 import {
   CircleBridge,
   isCircleMessageId,
@@ -605,10 +606,20 @@ export namespace CircleTransfer {
       ? time.expiration(0, 5, 0) // 5 minutes for automatic transfers
       : time.expiration(24, 0, 0); // 24 hours for manual
 
+    // Warn if the transfer exceeds the per-message burn limit for the token
+    // https://developers.circle.com/stablecoins/docs/limits
+    const cb = await srcChain.getCircleBridge();
+    const burnLimit = await cb.getBurnLimit?.(srcToken);
+    const warnings: QuoteWarning[] =
+      burnLimit !== null && burnLimit !== undefined && transfer.amount > burnLimit
+        ? [{ type: "BurnLimitWarning", burnLimit }]
+        : [];
+
     if (!transfer.automatic) {
       return {
         sourceToken: { token: srcToken, amount: transfer.amount },
         destinationToken: { token: dstToken, amount: transfer.amount },
+        warnings: warnings.length > 0 ? warnings : undefined,
         eta,
         expires,
       };
@@ -642,6 +653,7 @@ export namespace CircleTransfer {
       destinationToken: { token: dstToken, amount: dstAmount },
       relayFee: { token: srcToken, amount: fee },
       destinationNativeGas,
+      warnings: warnings.length > 0 ? warnings : undefined,
       eta,
       expires,
     };
