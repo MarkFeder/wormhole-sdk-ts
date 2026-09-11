@@ -236,7 +236,7 @@ Using `Uint8Array` as the paylaod type will always work:
   // Using Uint8Array will always work but you can use a more specific payload layout type
   console.log(deserialize("Uint8Array", fakeVaaBytes));
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L15)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L14)
 <!--EXAMPLE_PARSE_VAA-->
 
 But more specific types can be used
@@ -275,7 +275,7 @@ But more specific types can be used
   // Or use the correct payload type to get a more specific data structure
   console.log(deserialize("TokenBridge:Transfer", tokenBridgeVaaBytes));
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L38)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L37)
 <!--EXAMPLE_PARSE_TOKEN_TRANSFER_VAA-->
 
 Or define your own
@@ -313,7 +313,7 @@ Or define your own
   console.log(encoding.hex.encode(vaa.payload));
   console.log(deserializeLayout(customPayloadLayout, vaa.payload));
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L73)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/parseVaa.ts#L72)
 <!--EXAMPLE_PARSE_CUSTOM_VAA-->
 
 
@@ -419,36 +419,88 @@ We can create a new `Wormhole` object and use it to to create `TokenTransfer`, `
 <!--EXAMPLE_TOKEN_TRANSFER-->
 ```ts
   // Create a TokenTransfer object to track the state of the transfer over time
-  const xfer = await wh.tokenTransfer(
-    route.token,
-    route.amount,
-    route.source.address,
-    route.destination.address,
-    route.delivery?.automatic ?? false,
-    route.payload,
-    route.delivery?.nativeGas,
-  );
+  const protocol = route.delivery?.protocol ?? "TokenBridge";
+  let xfer: TokenTransfer<N>;
 
-  const quote = await TokenTransfer.quoteTransfer(
-    wh,
-    route.source.chain,
-    route.destination.chain,
-    xfer.transfer,
-  );
+  if (protocol === "TokenBridge") {
+    xfer = await wh.tokenTransfer(
+      route.token,
+      route.amount,
+      route.source.address,
+      route.destination.address,
+      protocol,
+      route.payload,
+    );
+  } else if (protocol === "ExecutorTokenBridge") {
+    // ExecutorTokenBridge requires additional setup for msgValue and gasLimit
+    xfer = await wh.tokenTransfer(
+      route.token,
+      route.amount,
+      route.source.address,
+      route.destination.address,
+      protocol,
+    );
+  } else {
+    throw new Error(`Unsupported protocol: ${protocol}`);
+  }
+
+  let quote;
+  if (xfer.transfer.protocol === "ExecutorTokenBridge") {
+    // For ExecutorTokenBridge, we need to estimate msgValue and gasLimit for the destination chain
+    // then get a quote with these parameters to obtain the executor quote
+    const dstTb = await route.destination.chain.getExecutorTokenBridge();
+    const dstToken = await TokenTransfer.lookupDestinationToken(
+      route.source.chain,
+      route.destination.chain,
+      route.token,
+    );
+    const { msgValue, gasLimit } = await dstTb.estimateMsgValueAndGasLimit(dstToken);
+    quote = await TokenTransfer.quoteTransfer(wh, route.source.chain, route.destination.chain, {
+      ...xfer.transfer,
+      msgValue,
+      gasLimit,
+    });
+    // Attach the executor quote to the transfer details for later use
+    xfer.transfer.executorQuote = quote.details.executorQuote;
+  } else {
+    quote = await TokenTransfer.quoteTransfer(
+      wh,
+      route.source.chain,
+      route.destination.chain,
+      xfer.transfer,
+    );
+  }
   console.log(quote);
-
-  if (xfer.transfer.automatic && quote.destinationToken.amount < 0)
-    throw "The amount requested is too low to cover the fee and any native gas requested.";
 
   // 1) Submit the transactions to the source chain, passing a signer to sign any txns
   console.log("Starting transfer");
   const srcTxids = await xfer.initiateTransfer(route.source.signer);
   console.log(`Started transfer: `, srcTxids);
 
-  // If automatic, we're done
-  if (route.delivery?.automatic) return xfer;
+  if (route.delivery?.protocol === "ExecutorTokenBridge") {
+    // For ExecutorTokenBridge transfers, we can track the status via the executor API
+    // This provides real-time updates on the relay progress
+    let retry = 0;
+    while (retry < 5) {
+      try {
+        const [status] = await wh.getExecutorTxStatus(srcTxids.at(-1)!, xfer.fromChain.chain);
+        if (status) {
+          console.log(`Executor transfer status: `, status);
+          break;
+        }
+      } catch (error) {
+        console.error(`Error fetching executor transfer status: `, error);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds before retrying
+      retry++;
+    }
+  }
 
-  // 2) Wait for the VAA to be signed and ready (not required for auto transfer)
+  // If using ExecutorTokenBridge, we're done
+  // Manual TokenBridge requires VAA redemption on the destination chain
+  if (route.delivery?.protocol !== "TokenBridge") return xfer;
+
+  // 2) Wait for the VAA to be signed and ready (not required for automatic protocols)
   console.log("Getting Attestation");
   const attestIds = await xfer.fetchAttestation(60_000);
   console.log(`Got Attestation: `, attestIds);
@@ -458,7 +510,7 @@ We can create a new `Wormhole` object and use it to to create `TokenTransfer`, `
   const destTxids = await xfer.completeTransfer(route.destination.signer);
   console.log(`Completed Transfer: `, destTxids);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/tokenBridge.ts#L122)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/tokenBridge.ts#L111)
 <!--EXAMPLE_TOKEN_TRANSFER-->
 
 
@@ -505,8 +557,20 @@ We can also transfer native USDC using [Circle's CCTP](https://www.circle.com/en
   console.log("Completing Transfer");
   const dstTxids = await xfer.completeTransfer(dst.signer);
   console.log(`Completed Transfer: `, dstTxids);
+
+  console.log("Tracking Transfer Progress");
+  let receipt = CircleTransfer.getReceipt(xfer);
+
+  for await (receipt of CircleTransfer.track(wh, receipt)) {
+    console.log("Receipt State:", receipt.state);
+    if (receipt.state === TransferState.DestinationFinalized) {
+      console.log("Transfer Confirmed Complete");
+      break;
+    }
+  }
+
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cctp.ts#L81)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cctp.ts#L74)
 <!--EXAMPLE_CCTP_TRANSFER-->
 
 
@@ -537,7 +601,7 @@ A transfer into Cosmos from outside cosmos will be automatically delivered to th
   const attests = await xfer.fetchAttestation(600_000);
   console.log("Got Attestations", attests);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L120)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L113)
 <!--EXAMPLE_GATEWAY_INBOUND-->
 
 A transfer within Cosmos will use IBC to transfer from the origin to the Gateway chain, then out from the Gateway to the destination chain
@@ -563,7 +627,7 @@ A transfer within Cosmos will use IBC to transfer from the origin to the Gateway
   const attests = await xfer.fetchAttestation(60_000);
   console.log("Got attests: ", attests);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L152)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L145)
 <!--EXAMPLE_GATEWAY_INTERCOSMOS-->
 
 A transfer leaving Cosmos will produce a VAA from the Gateway that must be manually redeemed on the destination chain 
@@ -592,7 +656,7 @@ A transfer leaving Cosmos will produce a VAA from the Gateway that must be manua
   const dstTxIds = await xfer.completeTransfer(dst.signer);
   console.log("Completed transfer on destination chain", dstTxIds);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L184)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cosmos.ts#L177)
 <!--EXAMPLE_GATEWAY_OUTBOUND-->
 
 
@@ -613,7 +677,7 @@ A `TransactionId` or `WormholeMessageId` may be used to recover the transfer
   const dstTxIds = await xfer.completeTransfer(signer);
   console.log("Completed transfer: ", dstTxIds);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cctp.ts#L131)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/cctp.ts#L130)
 <!--EXAMPLE_RECOVER_TRANSFER-->
 
 ## Routes
@@ -632,7 +696,7 @@ To provide a more flexible and generic interface, the `Wormhole` class provides 
     routes.AutomaticPorticoRoute, // Native eth transfers
   ]);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L20)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L21)
 <!--EXAMPLE_RESOLVER_CREATE-->
 
 Once created, the resolver can be used to provide a list of input and possible output tokens.
@@ -668,7 +732,7 @@ Once the tokens are selected, a `RouteTransferRequest` may be created to provide
   const foundRoutes = await resolver.findRoutes(tr);
   console.log("For the transfer parameters, we found these routes: ", foundRoutes);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L53)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L44)
 <!--EXAMPLE_REQUEST_CREATE-->
 
 Choosing the best route is currently left to the developer but strategies might include sorting by output amount or expected time to complete the transfer (no estimate currently provided).
@@ -696,7 +760,7 @@ After choosing the best route, extra parameters like `amount`, `nativeGasDropoff
   if (!quote.success) throw quote.error;
   console.log("Best route quote: ", quote);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L71)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L62)
 <!--EXAMPLE_REQUEST_VALIDATE-->
 
 
@@ -709,7 +773,7 @@ Finally, assuming the quote looks good, the route can initiate the request with 
     const receipt = await bestRoute.initiate(tr, sender.signer, quote, receiver.address);
     console.log("Initiated transfer with receipt: ", receipt);
 ```
-See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L95)
+See example [here](https://github.com/wormhole-foundation/wormhole-sdk-ts/blob/main/examples/src/router.ts#L86)
 <!--EXAMPLE_REQUEST_INITIATE-->
 
 Note: See the `router.ts` example in the examples directory for a full working example
