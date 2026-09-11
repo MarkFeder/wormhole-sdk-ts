@@ -7,6 +7,7 @@ import {
   type CircleTransferDetails,
   type Signer,
   type TokenId,
+  type TransactionId,
 } from "@wormhole-foundation/sdk-definitions";
 import { CircleTransfer } from "../../protocols/cctp/cctpTransfer.js";
 import { TransferState } from "../../types.js";
@@ -244,6 +245,14 @@ export class AutomaticCCTPRoute<N extends Network>
       originTxs: txids,
       attestation: { id: msg.id, attestation: { message: msg.message } },
     };
+  }
+
+  async resume(txid: TransactionId): Promise<R> {
+    const xfer = await CircleTransfer.from(this.wh, txid, 10 * 1000);
+    if (!xfer.transfer.automatic) {
+      throw new Error("Can only resume automatic Circle transfers");
+    }
+    return CircleTransfer.getReceipt(xfer);
   }
 
   public override async *track(receipt: R, timeout?: number) {
