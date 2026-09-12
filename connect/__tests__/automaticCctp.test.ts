@@ -1,8 +1,9 @@
 import * as publicRpcMock from "./mocks/publicrpc.js"; // Should be first
 
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
-import { platform } from "@wormhole-foundation/sdk-base";
+import { amount, platform } from "@wormhole-foundation/sdk-base";
 import { mocks } from "@wormhole-foundation/sdk-definitions/testing";
+import { MinAmountError } from "./../src/routes/types.js";
 
 // Dynamic import so the axios mock in ./mocks/publicrpc.js (registered via
 // jest.unstable_mockModule) is in place before connect loads axios.
@@ -63,5 +64,55 @@ describe("AutomaticCCTPRoute.resume", () => {
     await expect(route.resume(txid)).rejects.toThrow(
       "Can only resume automatic Circle transfers",
     );
+  });
+});
+
+describe("AutomaticCCTPRoute.validate minimum amount", () => {
+  let route: AutomaticCCTPRoute<"Testnet">;
+
+  beforeEach(() => {
+    const wh = new Wormhole("Testnet", allPlatformCtrs);
+    route = new AutomaticCCTPRoute(wh);
+  });
+
+  // Regression for #711: a transfer where amount == relayer fee would revert
+  // on-chain (nothing left to redeem). The SDK must reject it at validation.
+  test("rejects a transfer whose amount equals the relayer fee", async () => {
+    const request = {
+      fromChain: {
+        chain: "Ethereum",
+        getAutomaticCircleBridge: async () => ({
+          // $1.00 USDC relayer fee on 6-decimal USDC
+          getRelayerFee: async () => 1_000_000n,
+        }),
+      },
+      toChain: { chain: "Avalanche" },
+      parseAmount: (amt: string) => amount.parse(amt, 6),
+      amountFromBaseUnits: (units: bigint) => amount.fromBaseUnits(units, 6),
+    } as any;
+
+    const result = await route.validate(request, { amount: "1" } as any); // 1.00 USDC
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toBeInstanceOf(MinAmountError);
+  });
+
+  test("accepts a transfer above the minimum amount", async () => {
+    const request = {
+      fromChain: {
+        chain: "Ethereum",
+        getAutomaticCircleBridge: async () => ({
+          getRelayerFee: async () => 1_000_000n,
+        }),
+      },
+      toChain: { chain: "Avalanche" },
+      parseAmount: (amt: string) => amount.parse(amt, 6),
+      amountFromBaseUnits: (units: bigint) => amount.fromBaseUnits(units, 6),
+    } as any;
+
+    // minAmount is fee * 1.05 = 1.05 USDC, so 1.50 USDC is valid
+    const result = await route.validate(request, { amount: "1.5" } as any);
+
+    expect(result.valid).toBe(true);
   });
 });
