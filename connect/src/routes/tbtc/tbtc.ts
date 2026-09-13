@@ -37,6 +37,7 @@ import {
   type TransferReceipt,
 } from "../../types.js";
 import type { RouteTransferRequest } from "../request.js";
+import { getDestinationTx } from "../../whscan-api.js";
 import { Wormhole } from "../../wormhole.js";
 import { signSendWait } from "../../common.js";
 
@@ -323,9 +324,17 @@ export class TBTCRoute<N extends Network>
       const toBridge = await toChain.getTokenBridge();
       const isCompleted = await toBridge.isTransferCompleted(receipt.attestation.attestation);
       if (isCompleted) {
+        // Best-effort: fill in the destination tx from the API once the
+        // backend has indexed it (we have no other way to obtain it)
+        const destinationTx = await getDestinationTx(
+          this.wh.config.api,
+          receipt.attestation.id,
+        );
+
         receipt = {
           ...receipt,
           state: TransferState.DestinationFinalized,
+          ...(destinationTx ? { destinationTxs: [destinationTx] } : {}),
         } satisfies CompletedTransferReceipt<AttestationReceipt<"TBTCBridge">>;
 
         yield receipt;

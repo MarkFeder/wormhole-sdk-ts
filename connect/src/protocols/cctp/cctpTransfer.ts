@@ -43,6 +43,7 @@ import {
   isSourceInitiated,
 } from "../../types.js";
 import { Wormhole } from "../../wormhole.js";
+import { getDestinationTx } from "../../whscan-api.js";
 import type { WormholeTransfer } from "../wormholeTransfer.js";
 import { chainToPlatform } from "@wormhole-foundation/sdk-base";
 
@@ -550,10 +551,17 @@ export namespace CircleTransfer {
         receipt.attestation.attestation,
       );
       if (isComplete) {
+        // One last attempt to grab the destination tx from the API if we
+        // didn't get it earlier (e.g. the backend had not indexed it yet)
+        let destinationTxs = "destinationTxs" in receipt ? receipt.destinationTxs : undefined;
+        if (!destinationTxs?.length && isWormholeMessageId(receipt.attestation.id)) {
+          const destinationTx = await getDestinationTx<DC>(wh.config.api, receipt.attestation.id);
+          if (destinationTx) destinationTxs = [destinationTx];
+        }
         receipt = {
           ...receipt,
           state: TransferState.DestinationFinalized,
-          destinationTxs: [],
+          destinationTxs: destinationTxs ?? [],
         } as CompletedTransferReceipt<CircleTransfer.AttestationReceipt, SC, DC>;
       }
       yield receipt;

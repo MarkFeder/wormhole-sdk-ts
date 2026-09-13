@@ -40,3 +40,12 @@ export const givenSignedVaaRequestWorksAfterRetry = () => {
     .mockRejectedValueOnce(notFoundResponse)
     .mockResolvedValueOnce(sucessfulResponse);
 };
+
+// Drive the /v1/tx/{chain}/{txHash} endpoint. Each entry is a TransactionStatus
+// response body, consumed in order by successive axios.get calls. Falling back
+// to the default successful response once the queue is exhausted.
+export const givenTransactionStatusSequence = (statuses: unknown[]) => {
+  const fn = jest.fn();
+  for (const status of statuses) fn.mockResolvedValueOnce({ status: 200, data: status });
+  nextGet = fn;
+};

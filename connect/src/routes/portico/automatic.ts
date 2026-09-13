@@ -36,6 +36,7 @@ import {
   signSendWait,
 } from "./../../index.js";
 import type { ChainAddress, WormholeMessageId } from "@wormhole-foundation/sdk-definitions";
+import { getDestinationTx } from "../../whscan-api.js";
 import type { RouteTransferRequest } from "../request.js";
 
 export const SLIPPAGE_BPS = 15n; // 0.15%
@@ -333,9 +334,17 @@ export class AutomaticPorticoRoute<N extends Network>
         receipt.attestation.attestation,
       );
       if (isCompleted) {
+        // Best-effort: fill in the destination tx from the API once the
+        // backend has indexed it (we have no other way to obtain it)
+        const destinationTx = await getDestinationTx(
+          this.wh.config.api,
+          receipt.attestation.id,
+        );
+
         receipt = {
           ...receipt,
           state: TransferState.DestinationFinalized,
+          ...(destinationTx ? { destinationTxs: [destinationTx] } : {}),
         } satisfies CompletedTransferReceipt<AttestationReceipt<"PorticoBridge">>;
 
         yield receipt;

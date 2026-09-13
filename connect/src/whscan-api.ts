@@ -3,6 +3,7 @@ import { amount, encoding, toChain, toChainId } from "@wormhole-foundation/sdk-b
 import type {
   PayloadDiscriminator,
   PayloadLiteral,
+  TransactionId,
   TxHash,
   WormholeMessageId,
 } from "@wormhole-foundation/sdk-definitions";
@@ -231,6 +232,21 @@ export async function getTransactionStatusWithRetry(
     timeout,
     "Wormholescan:GetTransactionStatus",
   );
+}
+
+/**
+ * Best-effort, single-shot lookup of the destination transaction for a message.
+ * Returns the tx hash once WormholeScan has indexed the redeeming tx; undefined
+ * when it has not (or never will, e.g. the route does not complete on-chain).
+ */
+export async function getDestinationTx<DC extends Chain = Chain>(
+  apiUrl: string,
+  whm: WormholeMessageId,
+): Promise<TransactionId<DC> | undefined> {
+  const status = await getTransactionStatus(apiUrl, whm);
+  const destinationTx = status?.globalTx?.destinationTx;
+  if (!destinationTx?.txHash) return undefined;
+  return { chain: toChain(destinationTx.chainId) as DC, txid: destinationTx.txHash };
 }
 
 export async function getRelayStatus(rpcUrl: string, txid: TxHash): Promise<RelayData | null> {

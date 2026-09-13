@@ -66,7 +66,7 @@ import {
   isSourceFinalized,
   isSourceInitiated,
 } from "../../types.js";
-import { getGovernedTokens, getGovernorLimits } from "../../whscan-api.js";
+import { getDestinationTx, getGovernedTokens, getGovernorLimits } from "../../whscan-api.js";
 import { Wormhole } from "../../wormhole.js";
 import type { WormholeTransfer } from "../wormholeTransfer.js";
 import type { QuoteWarning } from "../../warnings.js";
@@ -485,9 +485,20 @@ export namespace TokenTransfer {
       );
 
       if (isComplete) {
+        // One last attempt to grab the destination tx from the API if we
+        // didn't get it earlier (e.g. the backend had not indexed it yet)
+        let destinationTxs = "destinationTxs" in receipt ? receipt.destinationTxs : undefined;
+        if (!destinationTxs?.length) {
+          const destinationTx = await getDestinationTx<DC>(
+            wh.config.api,
+            receipt.attestation.id,
+          );
+          if (destinationTx) destinationTxs = [destinationTx];
+        }
         receipt = {
           ...receipt,
           state: TransferState.DestinationFinalized,
+          destinationTxs,
           attestation: receipt.attestation,
         } satisfies CompletedTransferReceipt<TokenTransfer.AttestationReceipt>;
       }
