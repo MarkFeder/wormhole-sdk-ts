@@ -13,7 +13,7 @@ import { TransferState } from "../../types.js";
 import { Wormhole } from "../../wormhole.js";
 import type { StaticRouteMethods } from "../route.js";
 import { AutomaticRoute } from "../route.js";
-import { MinAmountError } from "../types.js";
+import { MinAmountError, QuoteError, UnavailableError } from "../types.js";
 import type {
   Quote,
   QuoteResult,
@@ -150,7 +150,7 @@ export class AutomaticCCTPRoute<N extends Network>
     } catch (e) {
       return {
         success: false,
-        error: e as Error,
+        error: e instanceof QuoteError ? e : new UnavailableError(e as Error),
       };
     }
   }

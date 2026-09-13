@@ -34,7 +34,7 @@ export type QuoteResult<
   OP,
   VP extends ValidatedTransferParams<OP> = ValidatedTransferParams<OP>,
   D = any,
-> = Quote<OP, VP, D> | QuoteError;
+> = Quote<OP, VP, D> | QuoteErrorResult;
 
 // Quote containing expected details of the transfer
 export type Quote<
@@ -87,19 +87,32 @@ export type Quote<
   provider?: string;
 };
 
-export type QuoteError = {
+export type QuoteErrorResult = {
   success: false;
   error: Error;
 };
 
+// Structured error for failures returned from quote() or validate().
+// The code provides a machine-readable discriminant so integrators can
+// handle quote failures without parsing error messages.
+export class QuoteError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "QuoteError";
+    this.code = code;
+  }
+}
+
 // Special error to return from quote() or validate() when the
 // given transfer amount is too small. Used to helpfully
 // show a minimum amount in the interface.
-export class MinAmountError extends Error {
+export class MinAmountError extends QuoteError {
   min: amount.Amount;
 
   constructor(min: amount.Amount) {
-    super(`Minimum transfer amount is ${amount.display(min)}`);
+    super("MinAmount", `Minimum transfer amount is ${amount.display(min)}`);
     this.min = min;
   }
 
@@ -110,11 +123,11 @@ export class MinAmountError extends Error {
 
 // Special error to return from quote() or validate() when the
 // protocol can't provide a quote.
-export class UnavailableError extends Error {
+export class UnavailableError extends QuoteError {
   internalError: Error;
 
   constructor(internalErr: Error) {
-    super(`Unable to fetch a quote`);
+    super("Unavailable", `Unable to fetch a quote`);
     this.internalError = internalErr;
   }
 }

@@ -14,6 +14,7 @@ import { CircleTransfer } from "../../protocols/cctp/cctpTransfer.js";
 import type { TransferReceipt } from "../../types.js";
 import { TransferState, isAttested } from "../../types.js";
 import { Wormhole } from "../../wormhole.js";
+import { QuoteError, UnavailableError } from "../types.js";
 import type { StaticRouteMethods } from "../route.js";
 import { ManualRoute } from "../route.js";
 import type {
@@ -136,7 +137,7 @@ export class CCTPRoute<N extends Network>
     } catch (e) {
       return {
         success: false,
-        error: e as Error,
+        error: e instanceof QuoteError ? e : new UnavailableError(e as Error),
       };
     }
   }

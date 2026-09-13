@@ -25,6 +25,7 @@ import type {
 } from "../../types.js";
 import { isAttested, isFailed, TransferState } from "../../types.js";
 import { Wormhole } from "../../wormhole.js";
+import { QuoteError, UnavailableError } from "../types.js";
 import type { StaticRouteMethods } from "../route.js";
 import { AutomaticRoute } from "../route.js";
 import type {
@@ -190,7 +191,8 @@ export class ExecutorTokenBridgeRoute<N extends Network>
     ) {
       return {
         success: false,
-        error: new Error(
+        error: new QuoteError(
+          "UnsupportedRoute",
           `Executor Token Bridge does not support transfers from ${request.fromChain.chain} to ${request.toChain.chain}`,
         ),
       };
@@ -281,7 +283,7 @@ export class ExecutorTokenBridgeRoute<N extends Network>
     } catch (e) {
       return {
         success: false,
-        error: e as Error,
+        error: e instanceof QuoteError ? e : new UnavailableError(e as Error),
       };
     }
   }

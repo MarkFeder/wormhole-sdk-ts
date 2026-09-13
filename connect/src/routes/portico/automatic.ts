@@ -1,5 +1,6 @@
 import { filters, finality, time } from "@wormhole-foundation/sdk-base";
 import type { StaticRouteMethods } from "../route.js";
+import { QuoteError, UnavailableError } from "../types.js";
 import { AutomaticRoute } from "../route.js";
 import type {
   Quote,
@@ -236,7 +237,8 @@ export class AutomaticPorticoRoute<N extends Network>
       if (destinationAmount < 0n) {
         return {
           success: false,
-          error: new Error(
+          error: new QuoteError(
+            "NegativeDestinationAmount",
             `Amount too low for slippage and fee, would result in negative destination amount (${destinationAmount})`,
           ),
         };
@@ -265,7 +267,7 @@ export class AutomaticPorticoRoute<N extends Network>
     } catch (e) {
       return {
         success: false,
-        error: e as Error,
+        error: e instanceof QuoteError ? e : new UnavailableError(e as Error),
       };
     }
   }
