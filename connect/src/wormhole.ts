@@ -25,7 +25,12 @@ import {
   nativeTokenId,
   toNative,
 } from "@wormhole-foundation/sdk-definitions";
-import { getCircleAttestationWithRetry } from "./circle-api.js";
+import {
+  getCircleAttestationWithRetry,
+  getCircleMessages as getCircleMessagesApi,
+  getCirclePublicKeys as getCirclePublicKeysApi,
+  type CircleMessage,
+} from "./circle-api.js";
 import type { WormholeConfig, WormholeConfigOverrides } from "./config.js";
 import { applyWormholeConfigOverrides } from "./config.js";
 import { DEFAULT_TASK_TIMEOUT } from "./config.js";
@@ -396,6 +401,27 @@ export class Wormhole<N extends Network> {
     timeout: number = DEFAULT_TASK_TIMEOUT,
   ): Promise<string | null> {
     return getCircleAttestationWithRetry(this.config.circleAPI, msgHash, timeout);
+  }
+
+  /**
+   * Gets the public keys of the Circle attestation signers.
+   * @returns The list of public keys as hex strings
+   */
+  async getCirclePublicKeys(): Promise<string[]> {
+    return getCirclePublicKeysApi(this.config.circleAPI);
+  }
+
+  /**
+   * Gets the messages emitted by a CCTP transaction, including its attestation.
+   * @param sourceDomainId The Circle domain id of the source chain
+   * @param transactionHash The hash of the transaction that emitted the message
+   * @returns The messages found, if any
+   */
+  async getCircleMessages(
+    sourceDomainId: number,
+    transactionHash: string,
+  ): Promise<CircleMessage[] | null> {
+    return getCircleMessagesApi(this.config.circleAPI, sourceDomainId, transactionHash);
   }
 
   /**

@@ -18,6 +18,25 @@ export interface Attestation {
   status: CircleAttestationStatus;
 }
 
+export interface CirclePublicKeysResponse {
+  publicKeys: string[];
+}
+
+export interface CircleMessage {
+  message: string;
+  attestation: string;
+  eventNonce: string;
+}
+export interface CircleMessagesResponse {
+  messages: CircleMessage[];
+}
+
+// The circleApi config points at the attestations endpoint
+// (e.g. https://iris-api.circle.com/v1/attestations); sibling
+// endpoints (publicKeys, messages) share the /v1 root, so strip
+// the trailing segment to reach it.
+const circleApiRoot = (circleApi: string) => circleApi.replace(/\/attestations$/, "");
+
 const mapCircleAttestation = (attestationResponse: CircleAttestationResponse) => ({
   message: attestationResponse.attestation,
   status: attestationResponse.status,
@@ -52,6 +71,33 @@ export async function getCircleAttestationWithRetry(
 ): Promise<string | null> {
   const task = () => getCircleAttestation(circleApi, msgHash);
   return retry<string>(task, CIRCLE_RETRY_INTERVAL, timeout, "Circle:GetAttestation");
+}
+
+export async function getCirclePublicKeys(circleApi: string): Promise<string[]> {
+  const url = `${circleApiRoot(circleApi)}/publicKeys`;
+  const response = await axios.get<CirclePublicKeysResponse>(url);
+  return response.data.publicKeys;
+}
+
+export async function getCircleMessages(
+  circleApi: string,
+  sourceDomainId: number,
+  transactionHash: string,
+): Promise<CircleMessage[] | null> {
+  const url = `${circleApiRoot(circleApi)}/messages/${sourceDomainId}/${transactionHash}`;
+  try {
+    const response = await axios.get<CircleMessagesResponse>(url);
+    return response.data.messages;
+  } catch (error) {
+    if (!error) return null;
+    if (typeof error === "object") {
+      // A 404 error means no message was found for the transaction
+      if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+      if ("status" in error && error.status === 404) return null;
+    }
+
+    throw error;
+  }
 }
 
 export async function checkCircleGeoblock(): Promise<{
