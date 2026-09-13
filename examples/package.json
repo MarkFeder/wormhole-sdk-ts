@@ -33,6 +33,7 @@
   },
   "sideEffects": false,
   "scripts": {
+    "build": "tsc -p ./tsconfig.json --noEmit",
     "router": "tsx src/router.ts",
     "wrapped": "tsx src/createWrapped.ts",
     "tb": "tsx src/tokenBridge.ts",

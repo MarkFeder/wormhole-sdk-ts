@@ -92,13 +92,17 @@ import { getSigner, waitLog } from "./helpers/index.js";
   console.log(receipt);
 })();
 
-async function tokenTransfer<N extends Network>(
+async function tokenTransfer<
+  N extends Network,
+  SC extends Chain = Chain,
+  DC extends Chain = Chain,
+>(
   wh: Wormhole<N>,
   route: {
     token: TokenId;
     amount: bigint;
-    source: SignerStuff<N, Chain>;
-    destination: SignerStuff<N, Chain>;
+    source: SignerStuff<N, SC>;
+    destination: SignerStuff<N, DC>;
     delivery?: {
       protocol: TokenTransfer.Protocol;
       nativeGas?: bigint;
@@ -152,13 +156,15 @@ async function tokenTransfer<N extends Network>(
     });
     // Attach the executor quote to the transfer details for later use
     xfer.transfer.executorQuote = quote.details.executorQuote;
-  } else {
+  } else if (xfer.transfer.protocol === "TokenBridge") {
     quote = await TokenTransfer.quoteTransfer(
       wh,
       route.source.chain,
       route.destination.chain,
       xfer.transfer,
     );
+  } else {
+    throw new Error(`Unsupported protocol: ${xfer.transfer.protocol}`);
   }
   console.log(quote);
 
