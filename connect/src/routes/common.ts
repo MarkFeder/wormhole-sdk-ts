@@ -26,7 +26,7 @@ export async function checkAndCompleteTransfer<N extends Network>(
   // overwrite receipt var as we receive updates, will return when it's complete
   // but can be called again if the destination is not finalized
   // this construct is to drain an async generator and return the last value
-  for await (receipt of route.track(receipt, 120 * 1000)) {
+  for await (receipt of route.track(receipt, timeout)) {
     log("Current Transfer State: ", TransferState[receipt.state]);
   }
 
@@ -53,11 +53,12 @@ export async function checkAndCompleteTransfer<N extends Network>(
     );
   }
 
-  const leftover = timeout - (Date.now() - start);
+  const wait = 2 * 1000;
+  // budget for the next attempt, the wait below included
+  const leftover = timeout - (Date.now() - start) - wait;
   // do we still have time?
   if (leftover > 0) {
     // give it a second, computers need to rest sometimes
-    const wait = 2 * 1000;
     log(`Transfer not complete, trying again in a ${wait}ms...`);
     await new Promise((resolve) => setTimeout(resolve, wait));
     return checkAndCompleteTransfer(route, receipt, destinationSigner, leftover);

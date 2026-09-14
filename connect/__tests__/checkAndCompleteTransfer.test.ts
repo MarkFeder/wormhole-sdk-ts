@@ -6,20 +6,29 @@ import { checkAndCompleteTransfer } from "../src/routes/common.js";
 // takes a moment like a real route would
 const TRACK_DELAY = 300;
 
+// The retry loop only sleeps between attempts, so these tests fail with a
+// clear error rather than hanging the suite if the budget is not honoured
+const MAX_TRACK_CALLS = 3;
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // A route stub whose track returns whatever receipt it was given, the way a
 // route whose destination completion is not yet observable behaves.
-function routeStub(handlers: Record<string, unknown>): any {
-  return {
+function routeStub(handlers: Record<string, unknown>, trackDelay = TRACK_DELAY): any {
+  const route: any = {
+    trackCalls: 0,
     async *track(receipt: any) {
-      await delay(TRACK_DELAY);
+      if (++route.trackCalls > MAX_TRACK_CALLS) {
+        throw new Error("track called too many times, timeout budget not honoured");
+      }
+      if (trackDelay > 0) await delay(trackDelay);
       yield receipt;
     },
     ...handlers,
   };
+  return route;
 }
 
 const signer = {
@@ -56,9 +65,23 @@ describe("checkAndCompleteTransfer", () => {
     const complete = jest.fn(async () => redeemedReceipt());
     const route = routeStub({ complete });
 
-    // Leave enough budget for one tracking retry
-    const result = await checkAndCompleteTransfer(route, attestedReceipt(), signer, 500, logger);
+    // Enough budget for one tracking retry
+    const result = await checkAndCompleteTransfer(route, attestedReceipt(), signer, 3000, logger);
 
+    expect(route.trackCalls).toBe(2);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result.state).toBe(TransferState.DestinationInitiated);
+  });
+
+  test("stops retrying once the remaining budget is spent", async () => {
+    const complete = jest.fn(async () => redeemedReceipt());
+    // A fast track, so the budget is only spent by the wait between attempts
+    const route = routeStub({ complete }, 0);
+
+    // Less than the wait between attempts, so there is no budget to retry
+    const result = await checkAndCompleteTransfer(route, attestedReceipt(), signer, 100, logger);
+
+    expect(route.trackCalls).toBe(1);
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.state).toBe(TransferState.DestinationInitiated);
   });
