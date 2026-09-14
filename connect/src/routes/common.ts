@@ -36,15 +36,21 @@ export async function checkAndCompleteTransfer<N extends Network>(
   // if the route is one we need to complete, do it
   if (isManual(route) && isAttested(receipt) && destinationSigner) {
     log("Completing transfer...");
-    const completedTxids = await route.complete(destinationSigner, receipt);
-    log("Completed transfer with txids: ", completedTxids);
+    receipt = await route.complete(destinationSigner, receipt);
+    log(
+      "Completed transfer with txids: ",
+      "destinationTxs" in receipt ? receipt.destinationTxs : [],
+    );
   }
 
   // if the route is one we need to finalize, do it
   if (isFinalizable(route) && isRedeemed(receipt) && destinationSigner) {
     log("Finalizing transfer...");
-    const completedTxids = await route.finalize(destinationSigner, receipt);
-    log("Finalized transfer with txids: ", completedTxids);
+    receipt = await route.finalize(destinationSigner, receipt);
+    log(
+      "Finalized transfer with txids: ",
+      "destinationTxs" in receipt ? receipt.destinationTxs : [],
+    );
   }
 
   const leftover = timeout - (Date.now() - start);
